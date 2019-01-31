@@ -9,3 +9,6 @@ To run the numpy implementation, run the following:
 
 To run the tensorflow implementation, run the following:
 > python rnn_tensorflow.py
+
+To run the pytorch implementation, run the following:
+> python rnn_pytorch.py
