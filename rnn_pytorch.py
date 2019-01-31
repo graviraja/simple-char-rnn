@@ -54,10 +54,13 @@ class CharRNN(nn.Module):
     
     def forward(self, hprev, x):
         # forward pass
-        hs_t = torch.tanh(torch.mm(x, self.Wxh) + torch.mm(hprev, self.Whh) + self.bh)
-        ys_t = torch.mm(hs_t, self.Why) + self.by
-        ps_t = F.softmax(ys_t, dim=1)
-        return ps_t, hs_t[-1].view(1, -1)
+        outputs = []
+        for i in range(len(x)):
+            hs_t = torch.tanh(torch.mm(x[i].view(1, -1), self.Wxh) + torch.mm(hprev, self.Whh) + self.bh)
+            outputs.append(hs_t)
+        output = torch.cat(outputs)
+        logits = torch.mm(output, self.Why) + self.by
+        return logits, output[-1].view(1, -1)
 
 model = CharRNN(vocab_size, hidden_size)
 criterion = nn.CrossEntropyLoss()
@@ -93,7 +96,7 @@ while p < MAX_DATA:
             with torch.no_grad():
                 sample_input_vals = one_hot(sample_sequence)
                 sample_output_softmax_val, sample_prev_state_val = model(sample_prev_state, sample_input_vals)
-                last_prediction = sample_output_softmax_val[-1]
+                last_prediction = nn.Softmax(dim=0)(sample_output_softmax_val[-1])
                 ix = np.random.choice(range(vocab_size), p=last_prediction.data.numpy().ravel())
                 ixes.append(ix)
                 sample_sequence = sample_sequence[1:] + [ix]
@@ -104,14 +107,15 @@ while p < MAX_DATA:
 
     # forward pass for sequence length of characters
     model.zero_grad()
-    # import pdb
-    # pdb.set_trace()
     logits, hprev = model(hprev, input_vals)
-
+    # detach the hprev, otherwise loss.backward() is trying to back-propagate all the way through to the start of time, 
+    # which works for the first batch but not for the second because the graph for the first batch has been discarded.
+    hprev = hprev.detach()
     loss = criterion(logits, target_vals)
-    loss.backward(retain_graph=True)
+    # replace loss.backward() with loss.backward(retain_graph=True) but know that each successive batch will take more 
+    # time than the previous one because it will have to back-propagate all the way through to the start of the first batch.
+    loss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
     optimizer.step()
-
     p += seq_length
     n += 1
